@@ -6,23 +6,22 @@ import torch
 import torch.nn as nn
 from torch.nn.parameter import Parameter
 
-from torch_stft.stft import STFT
 from libs.utils import get_layer
 
-class pTFGridNet_Small(nn.Module):
+class pTFGridNet(nn.Module):
     def __init__(self,
                  n_fft=320,
                  n_layers=2,
                  gru_hidden_units=192,
-                 attn_n_head=4,
-                 attn_approx_qk_dim=516,
-                 emb_dim=32,
-                 emb_ks=8,
-                 emb_hs=1,
+                 attn_n_head=8,
+                 attn_approx_qk_dim=1256,
+                 emb_dim=64,
+                 emb_ks=4,
+                 emb_hs=2,
                  activation="prelu",
                  eps=1.0e-5,
-                 chunk_size=4,
-                 left_context=60,
+                 chunk_size=8,
+                 left_context=56,
                  ):
         super().__init__()
         print(f"Model use chunk size {chunk_size} and left context {left_context}")
@@ -550,35 +549,6 @@ class FusionModule(nn.Module):
             self.mask = ~mask.bool()
         return self.mask
 
-    # def forward(self,
-    #             aux: torch.Tensor,
-    #             esti: torch.Tensor) -> torch.Tensor: #[B, C, T, F]
-    #     aux = aux.unsqueeze(1)  # [B, 1, C]
-    #     num_chunks = esti.shape[0] * esti.shape[2] // self.chunk_size
-    #     B, C, T, F = esti.shape
-    #
-    #     esti_batched = esti.permute(1, 0, 2, 3) # c b t f
-    #     esti_batched = esti_batched.reshape(esti_batched.shape[0], num_chunks, self.chunk_size, esti_batched.shape[3])
-    #     esti_batched = esti_batched.permute(1, 0, 2, 3)
-    #     flatten_esti = esti_batched.flatten(start_dim=2).transpose(1, 2)  # [B, T*F, C]
-    #     aux = aux.unsqueeze(-1).transpose(1, 2).expand_as(esti)
-    #     aux = aux.permute(1, 0, 2, 3)  # c b t f
-    #     aux = aux.reshape(aux.shape[0], num_chunks, self.chunk_size, aux.shape[3])
-    #     aux = aux.permute(1, 0, 2, 3)
-    #
-    #     flatten_aux = aux.flatten(start_dim=2).transpose(1, 2)
-    #     aux_adapt = self.attn(flatten_aux, flatten_esti, flatten_esti, need_weights=False)[0]
-    #     # flatten_aux = flatten_aux + self.alpha * aux_adapt  # [B, 1, C]
-    #     flatten_aux = flatten_aux + aux_adapt  # [B, 1, C]
-    #
-    #     aux = flatten_aux.unsqueeze(-1).transpose(1, 2)
-    #     aux = aux.reshape(aux.shape[0], aux.shape[1], self.chunk_size, F)
-    #     aux = aux.permute(0, 2, 1, 3)
-    #     aux = aux.reshape(B, T, C, F)
-    #     aux = aux.permute(0, 2, 1, 3)
-    #     esti = self.fusion(torch.cat((esti, aux), dim=1))  # [B, C, T, F]
-    #     return esti
-
     def forward(self,
                 aux: torch.Tensor,
                 esti: torch.Tensor) -> torch.Tensor: #[B, C, T, F]
@@ -709,7 +679,7 @@ if __name__ == "__main__":
     freq = n_fft // 2 + 1
     hop_length = 160
     batch = 1
-    model = pTFGridNet_Small(n_fft=n_fft,
+    model = pTFGridNet(n_fft=n_fft,
                              n_layers=n_layers,
                              gru_hidden_units=gru_size,
                              attn_n_head=attn_n_head,

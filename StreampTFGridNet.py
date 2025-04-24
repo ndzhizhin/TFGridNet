@@ -5,23 +5,24 @@ import torch.nn as nn
 from torch.nn.parameter import Parameter
 
 from tqdm import tqdm
-from pTFGridNet import pTFGridNet_Small
+from pTFGridNet import pTFGridNet
 from libs.utils import get_layer
 
-class StreampTFGridNet_Small(nn.Module):
+class StreampTFGridNet(nn.Module):
     def __init__(self,
-                 n_fft=256,
-                 n_layers=6,
+
+                 n_fft=320,
+                 n_layers=2,
                  gru_hidden_units=192,
-                 attn_n_head=4,
-                 attn_approx_qk_dim=516,
-                 emb_dim=32,
-                 emb_ks=8,
-                 emb_hs=1,
+                 attn_n_head=8,
+                 attn_approx_qk_dim=1256,
+                 emb_dim=64,
+                 emb_ks=4,
+                 emb_hs=2,
                  activation="prelu",
                  eps=1.0e-5,
-                 chunk_size=4,
-                 left_context=60,
+                 chunk_size=8,
+                 left_context=56,
                  ):
         super().__init__()
         self.n_layers = n_layers
@@ -90,6 +91,33 @@ class StreampTFGridNet_Small(nn.Module):
         dec_conv_add_cache[..., :self.t_pad, :] = esti[..., -self.t_pad:, :]
         esti = cut_part_esti.permute(0, 3, 2, 1)
         return esti, gru_h0, attn_cache_K, attn_cache_V, enc_conv_time_cache, dec_conv_add_cache
+
+
+
+class LayerNormalization4D(nn.Module):
+    def __init__(self, input_dimension, eps=1e-5):
+        super().__init__()
+        self.eps = eps
+
+        param_size = [1, input_dimension, 1, 1]
+        self.gamma = Parameter(torch.Tensor(*param_size).to(torch.float32))
+        self.beta = Parameter(torch.Tensor(*param_size).to(torch.float32))
+
+        nn.init.ones_(self.gamma)
+        nn.init.zeros_(self.beta)
+
+    def forward(self, x):
+        if x.ndim == 4:
+            stat_dim = (1,)
+        else:
+            raise ValueError("Expect x to have 4 dimensions, but got {}".format(x.ndim))
+
+        mu_ = x.mean(dim=stat_dim, keepdim=True)  # [B,1,T,F]
+        std_ = torch.sqrt(x.var(dim=stat_dim, unbiased=False, keepdim=True) + self.eps)  # [B,1,T,F]
+        x_hat = ((x - mu_) / (std_ + self.eps)) * self.gamma + self.beta
+
+        return x_hat
+
 
 class StreamGridNetBlock(nn.Module):
     def __init__(self,
@@ -333,7 +361,7 @@ if __name__ == "__main__":
     hop_length = 160
     batch = 1
 
-    model = pTFGridNet_Small(n_fft=n_fft,
+    model = pTFGridNet(n_fft=n_fft,
                              n_layers=n_layers,
                              gru_hidden_units=gru_size,
                              attn_n_head=attn_n_head,
@@ -346,7 +374,7 @@ if __name__ == "__main__":
                              chunk_size=chunk_size,
                              left_context=left_context).eval()
 
-    stream_model = StreampTFGridNet_Small(n_fft=n_fft,
+    stream_model = StreampTFGridNet(n_fft=n_fft,
                                           n_layers=n_layers,
                                           gru_hidden_units=gru_size,
                                           attn_n_head=attn_n_head,
