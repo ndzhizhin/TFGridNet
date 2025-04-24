@@ -361,6 +361,8 @@ if __name__ == "__main__":
     hop_length = 160
     batch = 1
 
+    device = "cpu"
+
     model = pTFGridNet(n_fft=n_fft,
                              n_layers=n_layers,
                              gru_hidden_units=gru_size,
@@ -386,4 +388,29 @@ if __name__ == "__main__":
                                           eps=1e-5,
                                           chunk_size=chunk_size,
                                           left_context=left_context).eval()
+
+    stream_model.load_state_dict(model.state_dict()) # Подгружаем веса для stream модели
+
+    noisy_input = torch.rand(1, 2, 104, 161) # рандомный зашумленный вход
+
+    emb_input = torch.rand(1, 64) # рандомный эмбеддинг
+    gru_c0 = torch.zeros(2, 1, 162, gru_size) # кэш для GRU в GridNetBlock
+    attn_cache_K = torch.zeros(n_layers, 8, 1288, left_context).to(device) # Кэш для механизма внимания
+    attn_cache_V = torch.zeros(n_layers, 8, left_context, 1288).to(device) # Кэш для механизма внимания
+    enc_conv_time_cache = torch.zeros(1, 2, 2, 161) # кэш для Encoder
+    dec_conv_add_cache = torch.zeros(1, 2, chunk_size, 161).to(device) # кэш для Decoder
+
+    full_res = model(noisy_input, emb_input)
+
+    stream_outputs = []
+    for i in range(0, noisy_input.shape[2], chunk_size):
+        stream_chunk = noisy_input[..., i : i + chunk_size, :] # Чанк размером 80 мс
+        stream_res, gru_c0, attn_cache_K, attn_cache_V, enc_conv_time_cache, dec_conv_add_cache = \
+            stream_model(stream_chunk, emb_input, gru_c0, attn_cache_K, attn_cache_V, enc_conv_time_cache, dec_conv_add_cache)
+
+        stream_outputs.append(stream_res) # Результат стрим модели дял одного чанка
+
+    stream_res = torch.cat(stream_outputs, dim=2)
+
+    print(torch.allclose(full_res, stream_res, atol=1e-4)) # Сравнение результатов фулл и стрим моделей
 
